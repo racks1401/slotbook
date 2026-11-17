@@ -2,6 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import CORS_ORIGINS
+from app.database import Base, engine
+import app.models  # Register models with Base metadata
+from app.routers import auth
+
+# Create database tables
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="SlotBook API")
 
@@ -12,6 +18,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth.router, prefix="/auth", tags=["auth"])
 
 
 @app.get("/health")
