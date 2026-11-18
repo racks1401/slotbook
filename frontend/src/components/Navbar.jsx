@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { clearToken, getToken } from '../api';
 
 export default function Navbar({ onLogout }) {
@@ -13,29 +13,55 @@ export default function Navbar({ onLogout }) {
   };
 
   return (
-    <nav className="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm mb-4">
+    <nav className="navbar navbar-expand navbar-dark bg-primary shadow-sm mb-4">
       <div className="container">
         <Link className="navbar-brand fw-bold" to="/">
           SlotBook
         </Link>
-        <div className="d-flex align-items-center">
+        <div className="d-flex align-items-center justify-content-between flex-grow-1 ms-3">
           {token ? (
-            <div className="d-flex align-items-center gap-3">
-              <Link className="nav-link text-white" to="/">
-                Rooms
-              </Link>
+            <>
+              <div className="navbar-nav me-auto">
+                <NavLink
+                  to="/"
+                  end
+                  className={({ isActive }) =>
+                    `nav-link ${isActive ? 'active fw-bold text-white' : 'text-white-50'}`
+                  }
+                >
+                  Rooms
+                </NavLink>
+                <NavLink
+                  to="/my-bookings"
+                  className={({ isActive }) =>
+                    `nav-link ${isActive ? 'active fw-bold text-white' : 'text-white-50'}`
+                  }
+                >
+                  My Bookings
+                </NavLink>
+              </div>
               <button className="btn btn-outline-light btn-sm" onClick={handleLogout}>
                 Logout
               </button>
-            </div>
+            </>
           ) : (
-            <div className="navbar-nav flex-row gap-3">
-              <Link className="nav-link text-white" to="/login">
+            <div className="navbar-nav ms-auto">
+              <NavLink
+                to="/login"
+                className={({ isActive }) =>
+                  `nav-link ${isActive ? 'active fw-bold text-white' : 'text-white-50'}`
+                }
+              >
                 Login
-              </Link>
-              <Link className="nav-link text-white" to="/register">
+              </NavLink>
+              <NavLink
+                to="/register"
+                className={({ isActive }) =>
+                  `nav-link ${isActive ? 'active fw-bold text-white' : 'text-white-50'}`
+                }
+              >
                 Register
-              </Link>
+              </NavLink>
             </div>
           )}
         </div>
