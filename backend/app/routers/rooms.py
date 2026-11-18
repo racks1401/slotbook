@@ -1,12 +1,12 @@
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import Room, User
-from app.schemas import RoomResponse
+from app.models import Booking, Room, User
+from app.schemas import BookingResponse, RoomResponse
 
 router = APIRouter()
 
@@ -33,3 +33,23 @@ def get_room(
             detail="Room not found",
         )
     return room
+
+
+@router.get("/{id}/bookings", response_model=List[BookingResponse])
+def get_room_bookings(
+    id: int,
+    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    room = db.query(Room).filter(Room.id == id).first()
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found",
+        )
+
+    query = db.query(Booking).filter(Booking.room_id == id)
+    if date:
+        query = query.filter(Booking.date == date.strip())
+    return query.order_by(Booking.start_time.asc()).all()

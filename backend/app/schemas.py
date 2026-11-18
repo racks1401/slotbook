@@ -1,5 +1,6 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from typing import Optional
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RegisterRequest(BaseModel):
@@ -36,3 +37,26 @@ class RoomResponse(BaseModel):
     building: str
     capacity: int
     is_active: bool
+
+
+class BookingCreate(BaseModel):
+    room_id: int
+    date: str
+    start_time: str
+    end_time: str
+    purpose: str = Field(..., max_length=200)
+
+
+class BookingResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    room_id: int
+    user_id: int
+    date: str
+    start_time: str
+    end_time: str
+    purpose: str
+    status: str
+    created_at: datetime
+    room: Optional[RoomResponse] = None
