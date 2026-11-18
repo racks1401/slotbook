@@ -97,21 +97,17 @@ All 7 test cases covering registration, login, token rejection, booking creation
 
 ## Screenshots
 
-- **Login**: `![Login](docs/screenshots/login.png)`
-- **Rooms**: `![Rooms](docs/screenshots/rooms.png)`
-- **Room Day View**: `![Room Day View](docs/screenshots/room-day.png)`
-- **My Bookings**: `![My Bookings](docs/screenshots/my-bookings.png)`
+| Login | Rooms | Room day view | My bookings |
+|:---:|:---:|:---:|:---:|
+| ![Login](docs/screenshots/login.png) | ![Rooms](docs/screenshots/rooms.png) | ![Room day view](docs/screenshots/room-day.png) | ![My bookings](docs/screenshots/my-bookings.png) |
 
 ---
 
 ## Current Limits
 
-Version 1 is a working room booking flow built to the initial specification. The following rules and features are intentionally omitted from Version 1:
+- Two bookings for the same room can overlap.
+- There are no opening hours, time grid or past-date checks.
+- Bookings cannot be cancelled or changed.
+- Every booking is confirmed straight away; there is no approval step.
+- Rooms can only be added through the seed script.
 
-- **Overlapping Bookings**: Two bookings can overlap (no clash checks).
-- **Time Constraints**: No opening hours or time grid checks (such as 30-minute intervals).
-- **Date Constraints**: No past-date checks.
-- **Modifications**: No booking cancellation or rescheduling.
-- **Workflow**: No admin approval workflow (all bookings are confirmed immediately).
-- **Recurrence**: No recurring bookings.
-- **Admin UI**: No admin screens to add, edit, or close rooms (rooms are added via seed script).
