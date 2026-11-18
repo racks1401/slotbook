@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
 
 from app.database import Base
 
@@ -13,3 +13,13 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     role = Column(String, nullable=False, default="student")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class Room(Base):
+    __tablename__ = "rooms"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True, nullable=False)
+    building = Column(String, nullable=False)
+    capacity = Column(Integer, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
