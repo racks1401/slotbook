@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { apiFetch, getToken } from '../api';
 
@@ -11,6 +11,24 @@ function getTodayDateIndia() {
   });
   return formatter.format(new Date());
 }
+
+function timeToMinutes(tStr) {
+  if (!tStr) return 0;
+  const parts = tStr.split(':');
+  return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+}
+
+// Generate 30-minute slots between 08:00 and 20:00
+const TIME_SLOTS = [];
+for (let h = 8; h <= 20; h++) {
+  const hh = String(h).padStart(2, '0');
+  TIME_SLOTS.push(`${hh}:00`);
+  if (h < 20) {
+    TIME_SLOTS.push(`${hh}:30`);
+  }
+}
+const START_TIME_OPTIONS = TIME_SLOTS.slice(0, -1); // 08:00 to 19:30
+const END_TIME_OPTIONS = TIME_SLOTS.slice(1); // 08:30 to 20:00
 
 export default function RoomDetail() {
   const { id } = useParams();
@@ -71,7 +89,7 @@ export default function RoomDetail() {
 
       apiFetch(`/rooms/${id}/bookings?date=${date}`)
         .then((data) => {
-          setBookings(data);
+          setBookings(data || []);
         })
         .catch((err) => {
           setBookingsError(err.message || 'Failed to load bookings for this date.');
@@ -89,6 +107,11 @@ export default function RoomDetail() {
       loadBookings(selectedDate);
     }
   }, [id, selectedDate, roomNotFound, loadBookings]);
+
+  // Sort bookings by real time
+  const sortedBookings = useMemo(() => {
+    return [...bookings].sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
+  }, [bookings]);
 
   // Handle booking form submission
   const handleBookingSubmit = async (e) => {
@@ -115,6 +138,7 @@ export default function RoomDetail() {
       setPurpose('');
       loadBookings(selectedDate);
     } catch (err) {
+      // Show exact API error message (422, 409, 404, etc.) in the form
       setBookingError(err.message || 'Failed to create booking.');
     } finally {
       setSubmitting(false);
@@ -179,6 +203,10 @@ export default function RoomDetail() {
               <span>
                 <strong>Capacity:</strong> {room.capacity} seats
               </span>
+              <span>•</span>
+              <span>
+                <strong>Hours:</strong> 08:00 - 20:00
+              </span>
             </div>
           </div>
         </div>
@@ -196,6 +224,7 @@ export default function RoomDetail() {
               <input
                 id="booking-date"
                 type="date"
+                min={getTodayDateIndia()}
                 className="form-control"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
@@ -215,7 +244,7 @@ export default function RoomDetail() {
                 <span className="visually-hidden">Loading bookings...</span>
               </div>
             </div>
-          ) : bookings.length === 0 ? (
+          ) : sortedBookings.length === 0 ? (
             <div className="alert alert-light border text-muted py-3 text-center mb-0">
               No bookings scheduled for this date.
             </div>
@@ -224,7 +253,7 @@ export default function RoomDetail() {
               <table className="table table-hover align-middle mb-0">
                 <thead className="table-light">
                   <tr>
-                    <th scope="col" style={{ width: '22%' }}>
+                    <th scope="col" style={{ width: '25%' }}>
                       Time Slot
                     </th>
                     <th scope="col">Purpose</th>
@@ -234,7 +263,7 @@ export default function RoomDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {bookings.map((b) => (
+                  {sortedBookings.map((b) => (
                     <tr key={b.id}>
                       <td className="fw-semibold text-primary">
                         {b.start_time} - {b.end_time}
@@ -275,30 +304,42 @@ export default function RoomDetail() {
             <div className="row g-3 mb-3">
               <div className="col-md-6">
                 <label className="form-label fw-semibold" htmlFor="startTime">
-                  Start Time
+                  Start Time (30-min steps, 08:00 - 19:30)
                 </label>
-                <input
+                <select
                   id="startTime"
-                  type="time"
-                  className="form-control"
+                  className="form-select"
                   value={startTime}
                   onChange={(e) => setStartTime(e.target.value)}
                   required
-                />
+                >
+                  <option value="">Select start time</option>
+                  {START_TIME_OPTIONS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="col-md-6">
                 <label className="form-label fw-semibold" htmlFor="endTime">
-                  End Time
+                  End Time (30-min steps, 08:30 - 20:00)
                 </label>
-                <input
+                <select
                   id="endTime"
-                  type="time"
-                  className="form-control"
+                  className="form-select"
                   value={endTime}
                   onChange={(e) => setEndTime(e.target.value)}
                   required
-                />
+                >
+                  <option value="">Select end time</option>
+                  {END_TIME_OPTIONS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 

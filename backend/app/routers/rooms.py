@@ -11,6 +11,14 @@ from app.schemas import BookingResponse, RoomResponse
 router = APIRouter()
 
 
+def time_to_minutes(t_str: str) -> int:
+    try:
+        parts = t_str.split(":")
+        return int(parts[0]) * 60 + int(parts[1])
+    except Exception:
+        return 0
+
+
 @router.get("", response_model=List[RoomResponse])
 @router.get("/", response_model=List[RoomResponse], include_in_schema=False)
 def get_rooms(
@@ -52,4 +60,7 @@ def get_room_bookings(
     query = db.query(Booking).filter(Booking.room_id == id)
     if date:
         query = query.filter(Booking.date == date.strip())
-    return query.order_by(Booking.start_time.asc()).all()
+    bookings = query.all()
+    # Sort by real time
+    bookings.sort(key=lambda b: time_to_minutes(b.start_time))
+    return bookings

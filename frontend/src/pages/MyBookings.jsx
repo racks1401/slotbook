@@ -1,6 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { apiFetch, getToken } from '../api';
+
+function timeToMinutes(tStr) {
+  if (!tStr) return 0;
+  const parts = tStr.split(':');
+  return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+}
 
 export default function MyBookings() {
   const [bookings, setBookings] = useState([]);
@@ -41,6 +47,16 @@ export default function MyBookings() {
       });
   }, [navigate]);
 
+  // Sort bookings by real time: newest date first, then chronological start time
+  const sortedBookings = useMemo(() => {
+    return [...bookings].sort((a, b) => {
+      if (a.date !== b.date) {
+        return b.date.localeCompare(a.date);
+      }
+      return timeToMinutes(a.start_time) - timeToMinutes(b.start_time);
+    });
+  }, [bookings]);
+
   if (loading) {
     return (
       <div className="container text-center mt-5">
@@ -66,7 +82,7 @@ export default function MyBookings() {
         </div>
       )}
 
-      {bookings.length === 0 && !error ? (
+      {sortedBookings.length === 0 && !error ? (
         <div className="alert alert-light border py-4 text-center shadow-sm">
           <p className="mb-2 text-muted">No bookings yet.</p>
           <Link to="/" className="btn btn-primary btn-sm">
@@ -89,7 +105,7 @@ export default function MyBookings() {
                   </tr>
                 </thead>
                 <tbody>
-                  {bookings.map((booking) => {
+                  {sortedBookings.map((booking) => {
                     const roomName =
                       booking.room?.name || roomsMap[booking.room_id] || `Room #${booking.room_id}`;
                     return (
