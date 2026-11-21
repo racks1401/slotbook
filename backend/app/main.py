@@ -22,6 +22,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(rooms.router, prefix="/rooms", tags=["rooms"])
 app.include_router(bookings.router, prefix="/bookings", tags=["bookings"])
+app.include_router(bookings.router, prefix="/admin/bookings", tags=["admin_bookings"])
 
 
 @app.get("/health")

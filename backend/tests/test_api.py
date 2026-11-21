@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from app.auth import hash_password, create_access_token
-from app.models import User
+from app.models import Booking, Room, User
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -422,3 +422,497 @@ def test_get_my_bookings_shows_only_mine(client, auth_headers, test_user, test_r
     my_bookings2 = res_mine2.json()
     assert len(my_bookings2) == 1
     assert my_bookings2[0]["purpose"] == "User 2 Booking"
+
+
+def test_booking_more_than_14_days_ahead_returns_422(client, auth_headers, test_room):
+    too_far = get_future_date(15)
+    response = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": test_room.id,
+            "date": too_far,
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "purpose": "Too far ahead",
+        },
+    )
+    assert response.status_code == 422
+    assert "14 days" in response.json()["detail"]
+
+
+def test_booking_within_14_days_succeeds(client, auth_headers, test_room):
+    within_limit = get_future_date(14)
+    response = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": test_room.id,
+            "date": within_limit,
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "purpose": "Day 14 booking",
+        },
+    )
+    assert response.status_code == 201
+
+
+def test_student_daily_4_hour_limit_exceeded_returns_422(client, auth_headers, test_room):
+    future_date = get_future_date(3)
+    # 1. Book 3 hours (180 mins)
+    res1 = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": test_room.id,
+            "date": future_date,
+            "start_time": "09:00",
+            "end_time": "12:00",
+            "purpose": "3 hour morning block",
+        },
+    )
+    assert res1.status_code == 201
+
+    # 2. Book 1 hour (60 mins) -> total 4 hours (240 mins) exactly allowed
+    res2 = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": test_room.id,
+            "date": future_date,
+            "start_time": "13:00",
+            "end_time": "14:00",
+            "purpose": "1 hour afternoon block",
+        },
+    )
+    assert res2.status_code == 201
+
+    # 3. Attempt another 30 mins -> total 4.5 hours -> rejected 422
+    res3 = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": test_room.id,
+            "date": future_date,
+            "start_time": "15:00",
+            "end_time": "15:30",
+            "purpose": "Extra 30 mins exceeding limit",
+        },
+    )
+    assert res3.status_code == 422
+    assert "Daily booking limit" in res3.json()["detail"]
+
+
+def test_admin_exempt_from_daily_limit(client, admin_headers, test_room):
+    future_date = get_future_date(4)
+    # Admin books 3 hours
+    res1 = client.post(
+        "/bookings",
+        headers=admin_headers,
+        json={
+            "room_id": test_room.id,
+            "date": future_date,
+            "start_time": "09:00",
+            "end_time": "12:00",
+            "purpose": "Admin morning block",
+        },
+    )
+    assert res1.status_code == 201
+
+    # Admin books another 2.5 hours -> total 5.5 hours -> allowed!
+    res2 = client.post(
+        "/bookings",
+        headers=admin_headers,
+        json={
+            "room_id": test_room.id,
+            "date": future_date,
+            "start_time": "13:00",
+            "end_time": "15:30",
+            "purpose": "Admin afternoon block",
+        },
+    )
+    assert res2.status_code == 201
+
+
+def test_daily_limit_spans_multiple_rooms(client, auth_headers, test_room, db_session):
+    room2 = Room(name="Secondary Room", building="Main Block", capacity=25, is_active=True)
+    db_session.add(room2)
+    db_session.commit()
+    db_session.refresh(room2)
+
+    future_date = get_future_date(5)
+    # Book 2.5 hours in room 1
+    res1 = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": test_room.id,
+            "date": future_date,
+            "start_time": "09:00",
+            "end_time": "11:30",
+            "purpose": "Lab work",
+        },
+    )
+    assert res1.status_code == 201
+
+    # Try booking 2 hours in room 2 (2.5 + 2 = 4.5 hours) -> rejected
+    res2 = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": room2.id,
+            "date": future_date,
+            "start_time": "12:00",
+            "end_time": "14:00",
+            "purpose": "Seminar in other room",
+        },
+    )
+    assert res2.status_code == 422
+    assert "Daily booking limit" in res2.json()["detail"]
+
+
+def test_capacity_60_or_more_starts_as_pending(client, auth_headers, large_room):
+    future_date = get_future_date(3)
+    response = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": large_room.id,
+            "date": future_date,
+            "start_time": "10:00",
+            "end_time": "11:30",
+            "purpose": "Large guest lecture",
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["status"] == "pending"
+
+
+def test_admin_can_approve_pending_booking(client, auth_headers, admin_headers, large_room):
+    future_date = get_future_date(3)
+    # 1. Student requests large room
+    res = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": large_room.id,
+            "date": future_date,
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "purpose": "Department seminar",
+        },
+    )
+    assert res.status_code == 201
+    booking_id = res.json()["id"]
+    assert res.json()["status"] == "pending"
+
+    # 2. Check pending list
+    res_pending = client.get("/bookings/pending", headers=admin_headers)
+    assert res_pending.status_code == 200
+    pending_ids = [b["id"] for b in res_pending.json()]
+    assert booking_id in pending_ids
+
+    # 3. Non-admin cannot approve
+    res_forbidden = client.post(f"/bookings/{booking_id}/approve", headers=auth_headers)
+    assert res_forbidden.status_code == 403
+
+    # 4. Admin approves
+    res_approve = client.post(f"/bookings/{booking_id}/approve", headers=admin_headers)
+    assert res_approve.status_code == 200
+    assert res_approve.json()["status"] == "confirmed"
+
+
+def test_admin_approval_checks_clashes_again(client, auth_headers, admin_headers, large_room, test_user, db_session):
+    from app.models import Booking
+    future_date = get_future_date(4)
+
+    # Directly create two pending bookings for the same room and overlapping time
+    b1 = Booking(
+        room_id=large_room.id,
+        user_id=test_user.id,
+        date=future_date,
+        start_time="10:00",
+        end_time="11:30",
+        purpose="Event A",
+        status="pending",
+    )
+    b2 = Booking(
+        room_id=large_room.id,
+        user_id=test_user.id,
+        date=future_date,
+        start_time="11:00",
+        end_time="12:00",
+        purpose="Event B",
+        status="pending",
+    )
+    db_session.add_all([b1, b2])
+    db_session.commit()
+    db_session.refresh(b1)
+    db_session.refresh(b2)
+
+    # Approve b1
+    res1 = client.post(f"/bookings/{b1.id}/approve", headers=admin_headers)
+    assert res1.status_code == 200
+    assert res1.json()["status"] == "confirmed"
+
+    # Approving b2 should detect clash with confirmed b1 and return 409
+    res2 = client.post(f"/bookings/{b2.id}/approve", headers=admin_headers)
+    assert res2.status_code == 409
+    assert "Slot 10:00-11:30 is already booked" in res2.json()["detail"]
+
+
+def test_admin_can_reject_pending_booking(client, auth_headers, admin_headers, large_room):
+    future_date = get_future_date(3)
+    res = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": large_room.id,
+            "date": future_date,
+            "start_time": "14:00",
+            "end_time": "15:00",
+            "purpose": "Club meeting",
+        },
+    )
+    booking_id = res.json()["id"]
+
+    res_reject = client.post(f"/bookings/{booking_id}/reject", headers=admin_headers)
+    assert res_reject.status_code == 200
+    assert res_reject.json()["status"] == "rejected"
+
+
+def test_student_can_cancel_own_upcoming_booking(client, auth_headers, test_room):
+    future_date = get_future_date(3)
+    res = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": test_room.id,
+            "date": future_date,
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "purpose": "Review session",
+        },
+    )
+    booking_id = res.json()["id"]
+
+    res_cancel = client.post(f"/bookings/{booking_id}/cancel", headers=auth_headers)
+    assert res_cancel.status_code == 200
+    assert res_cancel.json()["status"] == "cancelled"
+
+
+def test_cancelled_booking_frees_slot_for_new_booking(client, auth_headers, test_room):
+    future_date = get_future_date(4)
+    res1 = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": test_room.id,
+            "date": future_date,
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "purpose": "Initial session",
+        },
+    )
+    booking_id = res1.json()["id"]
+
+    # Cancel booking
+    client.post(f"/bookings/{booking_id}/cancel", headers=auth_headers)
+
+    # Re-book the same slot -> should succeed because slot is freed
+    res2 = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": test_room.id,
+            "date": future_date,
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "purpose": "New session in freed slot",
+        },
+    )
+    assert res2.status_code == 201
+
+
+def test_student_cannot_cancel_another_user_booking(client, auth_headers, test_room, db_session):
+    user2 = User(
+        name="Student Two",
+        email="student2@college.edu",
+        password_hash=hash_password("pw2"),
+        role="student",
+    )
+    db_session.add(user2)
+    db_session.commit()
+    db_session.refresh(user2)
+    user2_token = create_access_token(data={"sub": str(user2.id)})
+    user2_headers = {"Authorization": f"Bearer {user2_token}"}
+
+    future_date = get_future_date(3)
+    res = client.post(
+        "/bookings",
+        headers=user2_headers,
+        json={
+            "room_id": test_room.id,
+            "date": future_date,
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "purpose": "User 2 reservation",
+        },
+    )
+    booking_id = res.json()["id"]
+
+    # User 1 attempts to cancel User 2's booking -> 403 Forbidden
+    res_cancel = client.post(f"/bookings/{booking_id}/cancel", headers=auth_headers)
+    assert res_cancel.status_code == 403
+
+
+def test_admin_can_cancel_any_booking(client, admin_headers, auth_headers, test_room):
+    future_date = get_future_date(3)
+    res = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": test_room.id,
+            "date": future_date,
+            "start_time": "14:00",
+            "end_time": "15:00",
+            "purpose": "Student reservation",
+        },
+    )
+    booking_id = res.json()["id"]
+
+    res_cancel = client.post(f"/bookings/{booking_id}/cancel", headers=admin_headers)
+    assert res_cancel.status_code == 200
+    assert res_cancel.json()["status"] == "cancelled"
+
+
+def test_recurring_weekly_booking_success(client, auth_headers, test_room):
+    start_date = get_future_date(1)
+    res = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": test_room.id,
+            "date": start_date,
+            "start_time": "16:00",
+            "end_time": "17:00",
+            "purpose": "Weekly Study Group",
+            "repeat_weeks": 3,
+        },
+    )
+    assert res.status_code == 201
+    bookings = res.json()
+    assert isinstance(bookings, list)
+    assert len(bookings) == 3
+    dates = [b["date"] for b in bookings]
+    expected_d0 = start_date
+    expected_d1 = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=7)).strftime("%Y-%m-%d")
+    expected_d2 = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=14)).strftime("%Y-%m-%d")
+    assert dates == [expected_d0, expected_d1, expected_d2]
+
+
+def test_recurring_weekly_booking_all_or_nothing_on_clash(client, auth_headers, test_room):
+    start_date = get_future_date(1)
+    clash_date = (datetime.strptime(start_date, "%Y-%m-%d") + timedelta(days=7)).strftime("%Y-%m-%d")
+
+    # Pre-book week 2's slot
+    client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": test_room.id,
+            "date": clash_date,
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "purpose": "Pre-existing session on week 2",
+        },
+    )
+
+    # Attempt to book 3 recurring weeks at 10:00-11:00 -> week 2 will clash
+    res = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": test_room.id,
+            "date": start_date,
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "purpose": "Recurring team sync",
+            "repeat_weeks": 3,
+        },
+    )
+    assert res.status_code == 409
+    assert clash_date in res.json()["detail"]
+
+    # Verify all-or-nothing: week 1 must NOT be booked
+    res_w1 = client.get(f"/rooms/{test_room.id}/bookings?date={start_date}", headers=auth_headers)
+    assert len(res_w1.json()) == 0
+
+
+def test_admin_room_management_add_edit_close(client, admin_headers, auth_headers):
+    # 1. Non-admin cannot add room
+    res_forbid = client.post(
+        "/rooms",
+        headers=auth_headers,
+        json={"name": "New Lab", "building": "Block C", "capacity": 20},
+    )
+    assert res_forbid.status_code == 403
+
+    # 2. Admin adds room
+    res_add = client.post(
+        "/rooms",
+        headers=admin_headers,
+        json={"name": "Quantum Lab", "building": "Science Wing", "capacity": 25},
+    )
+    assert res_add.status_code == 201
+    new_room = res_add.json()
+    room_id = new_room["id"]
+    assert new_room["name"] == "Quantum Lab"
+
+    # 3. Admin edits room
+    res_edit = client.put(
+        f"/rooms/{room_id}",
+        headers=admin_headers,
+        json={"capacity": 30},
+    )
+    assert res_edit.status_code == 200
+    assert res_edit.json()["capacity"] == 30
+
+    # 4. Book room on future date
+    future_date = get_future_date(2)
+    res_book = client.post(
+        "/bookings",
+        headers=auth_headers,
+        json={
+            "room_id": room_id,
+            "date": future_date,
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "purpose": "Lab experiment",
+        },
+    )
+    assert res_book.status_code == 201
+    booking_id = res_book.json()["id"]
+
+    # 5. Cannot close room with future bookings
+    res_close_fail = client.post(f"/rooms/{room_id}/close", headers=admin_headers)
+    assert res_close_fail.status_code == 400
+    assert "Cannot close room with future confirmed or pending bookings" in res_close_fail.json()["detail"]
+
+    # 6. Cancel the future booking
+    client.post(f"/bookings/{booking_id}/cancel", headers=auth_headers)
+
+    # 7. Now close the room -> succeeds
+    res_close_ok = client.post(f"/rooms/{room_id}/close", headers=admin_headers)
+    assert res_close_ok.status_code == 200
+    assert res_close_ok.json()["is_active"] is False
+
+    # 8. Check GET /rooms does not list inactive room by default
+    res_rooms = client.get("/rooms", headers=auth_headers)
+    ids = [r["id"] for r in res_rooms.json()]
+    assert room_id not in ids
+
+    # 9. GET /rooms?include_inactive=true lists it
+    res_all_rooms = client.get("/rooms?include_inactive=true", headers=admin_headers)
+    ids_all = [r["id"] for r in res_all_rooms.json()]
+    assert room_id in ids_all

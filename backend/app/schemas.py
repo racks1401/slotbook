@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union, List
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -39,12 +39,27 @@ class RoomResponse(BaseModel):
     is_active: bool
 
 
+class RoomCreate(BaseModel):
+    name: str = Field(..., min_length=1)
+    building: str = Field(..., min_length=1)
+    capacity: int = Field(..., gt=0)
+    is_active: bool = True
+
+
+class RoomUpdate(BaseModel):
+    name: Optional[str] = None
+    building: Optional[str] = None
+    capacity: Optional[int] = Field(None, gt=0)
+    is_active: Optional[bool] = None
+
+
 class BookingCreate(BaseModel):
     room_id: int
     date: str
     start_time: str
     end_time: str
     purpose: str = Field(..., max_length=200)
+    repeat_weeks: Optional[int] = None
 
 
 class BookingResponse(BaseModel):
@@ -60,3 +75,4 @@ class BookingResponse(BaseModel):
     status: str
     created_at: datetime
     room: Optional[RoomResponse] = None
+    user: Optional[UserResponse] = None

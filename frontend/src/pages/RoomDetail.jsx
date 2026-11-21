@@ -12,6 +12,18 @@ function getTodayDateIndia() {
   return formatter.format(new Date());
 }
 
+function getMaxDateIndia() {
+  const d = new Date();
+  d.setDate(d.getDate() + 14);
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return formatter.format(d);
+}
+
 function timeToMinutes(tStr) {
   if (!tStr) return 0;
   const parts = tStr.split(':');
@@ -48,6 +60,8 @@ export default function RoomDetail() {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [purpose, setPurpose] = useState('');
+  const [repeatWeekly, setRepeatWeekly] = useState(false);
+  const [repeatWeeks, setRepeatWeeks] = useState(2);
   const [submitting, setSubmitting] = useState(false);
   const [bookingError, setBookingError] = useState('');
   const [bookingSuccess, setBookingSuccess] = useState('');
@@ -121,27 +135,58 @@ export default function RoomDetail() {
     setSubmitting(true);
 
     try {
+      const payload = {
+        room_id: Number(id),
+        date: selectedDate,
+        start_time: startTime,
+        end_time: endTime,
+        purpose: purpose,
+      };
+
+      if (repeatWeekly) {
+        payload.repeat_weeks = Number(repeatWeeks);
+      }
+
       await apiFetch('/bookings', {
         method: 'POST',
-        body: JSON.stringify({
-          room_id: Number(id),
-          date: selectedDate,
-          start_time: startTime,
-          end_time: endTime,
-          purpose: purpose,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      setBookingSuccess('Booking confirmed successfully!');
+      if (room && room.capacity >= 60) {
+        setBookingSuccess(
+          'Booking submitted successfully! Because this room has a capacity of 60+, it is pending admin approval.'
+        );
+      } else if (repeatWeekly) {
+        setBookingSuccess(`Successfully reserved slots for ${repeatWeeks} consecutive weeks!`);
+      } else {
+        setBookingSuccess('Booking confirmed successfully!');
+      }
+
       setStartTime('');
       setEndTime('');
       setPurpose('');
+      setRepeatWeekly(false);
+      setRepeatWeeks(2);
       loadBookings(selectedDate);
     } catch (err) {
-      // Show exact API error message (422, 409, 404, etc.) in the form
       setBookingError(err.message || 'Failed to create booking.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'confirmed':
+        return <span className="badge bg-success">Confirmed</span>;
+      case 'pending':
+        return <span className="badge bg-warning text-dark">Pending</span>;
+      case 'cancelled':
+        return <span className="badge bg-secondary">Cancelled</span>;
+      case 'rejected':
+        return <span className="badge bg-danger">Rejected</span>;
+      default:
+        return <span className="badge bg-light text-dark">{status}</span>;
     }
   };
 
@@ -194,20 +239,35 @@ export default function RoomDetail() {
       {room && (
         <div className="card shadow-sm border-0 mb-4">
           <div className="card-body p-4">
-            <h2 className="card-title fw-bold text-primary mb-2">{room.name}</h2>
-            <div className="d-flex flex-wrap gap-3 text-muted">
-              <span>
-                <strong>Building:</strong> {room.building}
-              </span>
-              <span>•</span>
-              <span>
-                <strong>Capacity:</strong> {room.capacity} seats
-              </span>
-              <span>•</span>
-              <span>
-                <strong>Hours:</strong> 08:00 - 20:00
-              </span>
+            <div className="d-flex justify-content-between align-items-start">
+              <div>
+                <h2 className="card-title fw-bold text-primary mb-2">{room.name}</h2>
+                <div className="d-flex flex-wrap gap-3 text-muted">
+                  <span>
+                    <strong>Building:</strong> {room.building}
+                  </span>
+                  <span>•</span>
+                  <span>
+                    <strong>Capacity:</strong> {room.capacity} seats
+                  </span>
+                  <span>•</span>
+                  <span>
+                    <strong>Hours:</strong> 08:00 - 20:00
+                  </span>
+                </div>
+              </div>
+              {room.capacity >= 60 && (
+                <span className="badge bg-warning text-dark fs-6 px-3 py-2">
+                  Approval Required (60+ seats)
+                </span>
+              )}
             </div>
+
+            {room.capacity >= 60 && (
+              <div className="alert alert-warning mt-3 mb-0 py-2 small" role="alert">
+                <strong>Notice:</strong> This room has a capacity of {room.capacity} seats. New bookings start as <em>pending</em> and require admin approval before being confirmed.
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -225,6 +285,7 @@ export default function RoomDetail() {
                 id="booking-date"
                 type="date"
                 min={getTodayDateIndia()}
+                max={getMaxDateIndia()}
                 className="form-control"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
@@ -246,7 +307,7 @@ export default function RoomDetail() {
             </div>
           ) : sortedBookings.length === 0 ? (
             <div className="alert alert-light border text-muted py-3 text-center mb-0">
-              No bookings scheduled for this date.
+              No active bookings scheduled for this date.
             </div>
           ) : (
             <div className="table-responsive">
@@ -269,11 +330,7 @@ export default function RoomDetail() {
                         {b.start_time} - {b.end_time}
                       </td>
                       <td>{b.purpose}</td>
-                      <td>
-                        <span className="badge bg-success-subtle text-success border border-success-subtle">
-                          {b.status}
-                        </span>
-                      </td>
+                      <td>{getStatusBadge(b.status)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -343,7 +400,7 @@ export default function RoomDetail() {
               </div>
             </div>
 
-            <div className="mb-4">
+            <div className="mb-3">
               <label className="form-label fw-semibold" htmlFor="purpose">
                 Purpose (max 200 characters)
               </label>
@@ -358,6 +415,49 @@ export default function RoomDetail() {
                 required
               />
               <div className="form-text text-muted">{purpose.length}/200 characters</div>
+            </div>
+
+            {/* Recurring weekly booking option */}
+            <div className="card bg-light border-0 p-3 mb-4">
+              <div className="form-check mb-2">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  id="repeatWeeklyCheckbox"
+                  checked={repeatWeekly}
+                  onChange={(e) => setRepeatWeekly(e.target.checked)}
+                />
+                <label className="form-check-label fw-semibold" htmlFor="repeatWeeklyCheckbox">
+                  Repeat weekly
+                </label>
+              </div>
+
+              {repeatWeekly && (
+                <div className="row align-items-center g-2 mt-1">
+                  <div className="col-auto">
+                    <label htmlFor="repeatWeeksSelect" className="col-form-label text-muted small">
+                      Number of weeks:
+                    </label>
+                  </div>
+                  <div className="col-auto">
+                    <select
+                      id="repeatWeeksSelect"
+                      className="form-select form-select-sm"
+                      value={repeatWeeks}
+                      onChange={(e) => setRepeatWeeks(e.target.value)}
+                    >
+                      {[2, 3, 4, 5, 6, 7, 8].map((n) => (
+                        <option key={n} value={n}>
+                          {n} weeks
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="col-12 text-muted small">
+                    Every week at the same time starting on {selectedDate}. If any date has a conflict, nothing will be booked.
+                  </div>
+                </div>
+              )}
             </div>
 
             <button type="submit" className="btn btn-primary px-4 py-2" disabled={submitting}>

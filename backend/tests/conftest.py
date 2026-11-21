@@ -76,11 +76,49 @@ def auth_headers(test_user_token):
 
 
 @pytest.fixture
+def admin_user(db_session):
+    admin = User(
+        name="Admin User",
+        email="admin@college.edu",
+        password_hash=hash_password("adminpass123"),
+        role="admin",
+    )
+    db_session.add(admin)
+    db_session.commit()
+    db_session.refresh(admin)
+    return admin
+
+
+@pytest.fixture
+def admin_user_token(admin_user):
+    return create_access_token(data={"sub": str(admin_user.id)})
+
+
+@pytest.fixture
+def admin_headers(admin_user_token):
+    return {"Authorization": f"Bearer {admin_user_token}"}
+
+
+@pytest.fixture
 def test_room(db_session):
     room = Room(
         name="Turing Lab",
         building="Science Block",
         capacity=30,
+        is_active=True,
+    )
+    db_session.add(room)
+    db_session.commit()
+    db_session.refresh(room)
+    return room
+
+
+@pytest.fixture
+def large_room(db_session):
+    room = Room(
+        name="Aryabhata Hall",
+        building="Main Block",
+        capacity=100,
         is_active=True,
     )
     db_session.add(room)

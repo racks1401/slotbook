@@ -4,6 +4,8 @@ import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import RoomDetail from './pages/RoomDetail';
 import MyBookings from './pages/MyBookings';
+import AdminApprovals from './pages/AdminApprovals';
+import AdminRooms from './pages/AdminRooms';
 import Login from './pages/Login';
 import Register from './pages/Register';
 
@@ -22,6 +24,8 @@ export default function App() {
           <Route path="/" element={<Home key={authVersion} />} />
           <Route path="/rooms/:id" element={<RoomDetail key={authVersion} />} />
           <Route path="/my-bookings" element={<MyBookings key={authVersion} />} />
+          <Route path="/admin/approvals" element={<AdminApprovals key={authVersion} />} />
+          <Route path="/admin/rooms" element={<AdminRooms key={authVersion} />} />
           <Route path="/login" element={<Login onLoginSuccess={handleAuthChange} />} />
           <Route path="/register" element={<Register />} />
           <Route path="*" element={<Navigate to="/" replace />} />
